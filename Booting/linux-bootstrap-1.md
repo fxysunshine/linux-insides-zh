@@ -4,7 +4,7 @@
 从引导加载程序内核
 --------------------------------------------------------------------------------
 
-如果看过我在这之前的[文章](http://0xax.blogspot.com/search/label/asm)，你就会知道我已经开始涉足底层的代码编写。我写了一些关于 Linux x86_64  汇编的文章。同时，我开始深入研究 Linux 源代码。底层是如果工作的，程序是如何在电脑上运行的，它们是如何在内存中定位的，内核是如何管理进程和内存，网络堆栈是如何在底层工作的等等，这些我都非常感兴趣。因此，我决定去写另外的一系列文章关于 **x86_64** 框架的 Linux 内核。
+如果看过我在这之前的[文章](http://0xax.blogspot.com/search/label/asm)，你就会知道我已经开始涉足底层的代码编写。我写了一些关于 Linux x86_64  汇编的文章。同时，我开始深入研究 Linux 源代码。底层是如何工作的，程序是如何在电脑上运行的，它们是如何在内存中定位的，内核是如何管理进程和内存，网络堆栈是如何在底层工作的等等，这些我都非常感兴趣。因此，我决定去写另外的一系列文章关于 **x86_64** 框架的 Linux 内核。
 
 *注意这不是官方文档，只是学习和分享知识*
 
@@ -20,7 +20,7 @@
 神奇的电源按钮，接下来会发生什么？
 --------------------------------------------------------------------------------
 
-尽管这一系列文章关于 Linux 内核，我们在第一章并不会从内核代码开始。电脑在你按下电源开关的时候，就开始工作。主板发送信号给[电源](https://en.wikipedia.org/wiki/Power_supply)，而电源收到信号后会给电脑供应合适的电量。一旦主板收到了[电源备妥信号](https://en.wikipedia.org/wiki/Power_good_signal),它会尝试启动 CPU 。CPU 则复位寄存器的所有数据，并设置每个寄存器的预定值。
+尽管这是一系列关于 Linux 内核的文章，我们在第一章并不会从内核代码开始。电脑在你按下电源开关的时候，就开始工作。主板发送信号给[电源](https://en.wikipedia.org/wiki/Power_supply)，而电源收到信号后会给电脑供应合适的电量。一旦主板收到了[电源备妥信号](https://en.wikipedia.org/wiki/Power_good_signal)，它会尝试启动 CPU 。CPU 则复位寄存器的所有数据，并设置每个寄存器的预定值。
 
 
 [80386](https://en.wikipedia.org/wiki/Intel_80386) 
@@ -32,13 +32,13 @@ CS selector 0xf000
 CS base     0xffff0000
 ```
 
-处理器开始在[实模式](https://en.wikipedia.org/wiki/Real_mode)工作，我们需要退回一点去理解在这种模式下的内存分割。所有 x86兼容处理器都支持实模式，从 [8086](https://en.wikipedia.org/wiki/Intel_8086)到现在的 Intel 64 位  CPU。8086 处理器有一个20位寻址总线，这意味着它可以对0到 2^20  位地址空间进行操作（ 1Mb ）.不过它只有16位的寄存器，通过这个16位寄存器最大寻址是  2^16 即 0xffff （64 Kb）。实模式使用[段式内存管理](http://en.wikipedia.org/wiki/Memory_segmentation) 来管理整个内存空间。所有内存被分成固定的 64KB 大小的小块。由于我们不能用16位寄存器寻址大于 64KB 的内存，一种替代的方法被设计出来了。一个地址包括两个部分：数据段起始地址和从该数据段起的偏移量。为了得到内存中的物理地址，我们要让数据段乘16并加上偏移量：
+处理器开始在[实模式](https://en.wikipedia.org/wiki/Real_mode)工作。我们需要退回一点去理解在这种模式下的内存分段机制。从 [8086](https://en.wikipedia.org/wiki/Intel_8086)到现在的 Intel 64 位  CPU，所有 x86兼容处理器都支持实模式。8086 处理器有一个20位寻址总线，这意味着它可以对0到 2^20  位地址空间（ 1MB ）进行操作。不过它只有16位的寄存器，所以最大寻址空间是  2^16 即 0xffff （64 KB）。实模式使用[段式内存管理](http://en.wikipedia.org/wiki/Memory_segmentation) 来管理整个内存空间。所有内存被分成固定的65536字节（64 KB） 大小的小块。由于我们不能用16位寄存器寻址大于 64KB 的内存，一种替代的方法被设计出来了。一个地址包括两个部分：数据段起始地址和从该数据段起的偏移量。为了得到内存中的物理地址，我们要让数据段乘16并加上偏移量：
 
 ```
 PhysicalAddress = Segment * 16 + Offset
 ```
 
-举个例子，如果 `CS:IP` 是 `0x2000:0x0010`, 相关的物理地址将会是： 
+举个例子，如果 `CS:IP` 是 `0x2000:0x0010`, 则对应的物理地址将会是： 
 
 ```python
 >>> hex((0x2000 << 4) + 0x0010)
@@ -72,31 +72,33 @@ PhysicalAddress = Segment * 16 + Offset
 得到的 `0xfffffff0` 是 4GB - 16 字节。 这个地方是 [复位向量(Reset vector)](http://en.wikipedia.org/wiki/Reset_vector) 。 这是CPU在重置后期望执行的第一条指令的内存地址。它包含一个 [jump](http://en.wikipedia.org/wiki/JMP_%28x86_instruction%29) 指令，这个指令通常指向BIOS入口点。举个例子，如果访问 [coreboot](http://www.coreboot.org/) 源代码，将看到：
 
 ```assembly
-	.section ".reset"
+	.section ".reset", "ax", %progbits
 	.code16
-.globl	reset_vector
-reset_vector:
+.globl	_start
+_start:
 	.byte  0xe9
-	.int   _start - ( . + 2 )
+	.int   _start16bit - ( . + 2 )
 	...
 ```
 
-上面的跳转指令（ [opcode](http://ref.x86asm.net/coder32.html#xE9) - 0xe9）跳转到地址  `_start - ( . + 2)` 去执行代码。 `reset` 段是16字节代码段， 起始于地址 
-`0xfffffff0`，因此 CPU 复位之后，就会跳到这个地址来执行相应的代码 ：
+上面的跳转指令（ [opcode](http://ref.x86asm.net/coder32.html#xE9) - 0xe9）跳转到地址  `_start16bit - ( . + 2)` 去执行代码。 `reset` 段是 `16` 字节代码段， 起始于地址 
+`0xfffffff0`(`src/cpu/x86/16bit/reset16.ld`)，因此 CPU 复位之后，就会跳到这个地址来执行相应的代码 ：
 
 ```
 SECTIONS {
+	/* Trigger an error if I have an unuseable start address */
+ 	_bogus = ASSERT(_start16bit >= 0xffff0000, "_start16bit too low. Please report.");
 	_ROMTOP = 0xfffffff0;
 	. = _ROMTOP;
 	.reset . : {
-		*(.reset)
-		. = 15 ;
+		*(.reset);
+		. = 15;
 		BYTE(0x00);
 	}
 }
 ```
 
-现在BIOS已经开始工作了。在初始化和检查硬件之后，需要寻找到一个可引导设备。可引导设备列表存储在在 BIOS 配置中, BIOS 将根据其中配置的顺序，尝试从不同的设备上寻找引导程序。对于硬盘，BIOS  将尝试寻找引导扇区。如果在硬盘上存在一个MBR分区，那么引导扇区储存在第一个扇区(512字节)的头446字节，引导扇区的最后必须是 `0x55` 和 `0xaa` ，这2个字节称为魔术字节，如果 BIOS 看到这2个字节，就知道这个设备是一个可引导设备。举个例子：
+现在BIOS已经开始工作了。在初始化和检查硬件之后，需要寻找到一个可引导设备。可引导设备列表存储在在 BIOS 配置中, BIOS 将根据其中配置的顺序，尝试从不同的设备上寻找引导程序。对于硬盘，BIOS  将尝试寻找引导扇区。如果在硬盘上存在一个MBR分区，那么引导扇区储存在第一个扇区(512字节)的头446字节，引导扇区的最后必须是 `0x55` 和 `0xaa` ，这2个字节称为魔术字节（Magic Bytes)，如果 BIOS 看到这2个字节，就知道这个设备是一个可引导设备。举个例子：
 
 ```assembly
 ;
@@ -130,7 +132,7 @@ nasm -f bin boot.nasm && qemu-system-x86_64 boot
 
 将看到:
 
-![Simple bootloader which prints only `!`](http://oi60.tinypic.com/2qbwup0.jpg)
+![Simple bootloader which prints only `!`](https://github.com/0xAX/linux-insides/raw/master/Booting/images/simple_bootloader.png)
 
 在这个例子中，这段代码被执行在16位的实模式，起始于内存0x7c00。之后调用 [0x10](http://www.ctyme.com/intr/rb-0106.htm) 中断打印 `!` 符号。用0填充剩余的510字节并用两个Magic Bytes `0xaa` 和 `0x55` 结束。
 
@@ -141,7 +143,7 @@ nasm -f bin boot.nasm
 objdump -D -b binary -mi386 -Maddr16,data16,intel boot
 ```
 
-一个真实的启动扇区包含了分区表，已经用来启动系统的指令，而不是像我们上面的程序，只是输出了一个感叹号就结束了。从启动扇区的代码被执行开始，BIOS 就将系统的控制权转移给了引导程序，让我们继续往下看看引导程序都做了些什么。
+一个真实的启动扇区包含了分区表，以及用来启动系统的指令，而不是像我们上面的程序，只是输出了一个感叹号就结束了。从启动扇区的代码被执行开始，BIOS 就将系统的控制权转移给了引导程序，让我们继续往下看看引导程序都做了些什么。
 
 **NOTE**: 强调一点，上面的引导程序是运行在实模式下的，因此 CPU 是使用下面的公式进行物理地址的计算的：
 
@@ -207,7 +209,7 @@ hdr:
 
 bootloader必须填充在 Linux boot protocol 中标记为 `write` 的头信息，比如 [type_of_loader](http://lxr.free-electrons.com/source/Documentation/x86/boot.txt?v=3.18#L354)，这些头信息可能来自命令行，或者通过计算得到。在这里我们不会详细介绍所有的 kernel setup header，我们将在需要的时候逐个介绍。不过，你可以自己通过 [boot protocol](http://lxr.free-electrons.com/source/Documentation/x86/boot.txt?v=3.18#L156) 来了解这些设置。
 
-通过阅读 kernel boot protocol，在内核被引导入内存后，内存使用情况将入下表所示：
+通过阅读 kernel boot protocol，在内核被引导入内存后，内存使用情况将如下表所示：
 
 ```shell
          | Protected-mode kernel  |
@@ -243,7 +245,7 @@ X+08000  +------------------------+
 
 上面的公式中， `X` 是 kernel bootsector 被引导入内存的位置。在我的机器上， `X` 的值是 `0x10000`，我们可以通过 memory dump 来检查这个地址：
 
-![kernel first address](http://oi57.tinypic.com/16bkco2.jpg)
+![kernel first address](https://github.com/0xAX/linux-insides/raw/master/Booting/images/kernel_first_address.png)
 
 到这里，引导程序完成它的使命，并将控制权移交给了 Linux kernel。下面我们就来看看 kernel setup code 都做了些什么。
 
@@ -258,7 +260,7 @@ X+08000  +------------------------+
 qemu-system-x86_64 vmlinuz-3.18-generic
 ```
 
-![Try vmlinuz in qemu](http://oi60.tinypic.com/r02xkz.jpg)
+![Try vmlinuz in qemu](https://github.com/0xAX/linux-insides/raw/master/Booting/images/try_vmlinuz_in_qemu.png)
 
 为了能够作为 bootloader 来使用, `header.S` 开始处定义了 [MZ] [MZ](https://en.wikipedia.org/wiki/DOS_MZ_executable) 魔术数字, 并且定义了  [PE](https://en.wikipedia.org/wiki/Portable_Executable) 头，在 PE 头中定义了输出的字符串：
 
@@ -324,7 +326,7 @@ fs = es = ds = ss = 0x1000
 cs = 0x1020
 ```
 
-从 `start_of_setup` 标号开是的代码需要完成下面这些事情：
+从 `start_of_setup` 标号开始的代码需要完成下面这些事情：
 
 * 将所有段寄存器的值设置成一样的内容
 * 设置堆栈
@@ -385,7 +387,7 @@ cs = 0x1020
 
 这段代码首先将 `dx` 寄存器的值（就是当前`sp` 寄存器的值）4字节对齐，然后检查是否为0（如果是0，堆栈就不对了，因为堆栈是从大地址向小地址发展的），如果是0，那么就将 `dx` 寄存器的值设置成 `0xfffc` （64KB地址段的最后一个4字节地址）。如果不是0，那么就保持当前值不变。接下来，就将 `ax` 寄存器的值（ 0x10000 ）设置到 `ss` 寄存器，并根据 `dx` 寄存器的值设置正确的 `sp`。这样我们就得到了正确的堆栈设置，具体请参考下图：
 
-![stack](http://oi58.tinypic.com/16iwcis.jpg)
+![stack](https://github.com/0xAX/linux-insides/raw/master/Booting/images/stack1.png)
 
 * 下面让我们来看 `ss` != `ds`的情况，首先将 setup code 的结束地址 [_end](http://lxr.free-electrons.com/source/arch/x86/boot/setup.ld?v=3.18#L52) 写入 `dx` 寄存器。然后检查 `loadflags` 中是否设置了 `CAN_USE_HEAP` 标志。   根据 kernel boot protocol 的定义，[loadflags](http://lxr.free-electrons.com/source/arch/x86/boot/header.S?v=3.18#L321) 是一个标志字段。这个字段的 `Bit 7` 就是 `CAN_USE_HEAP` 标志：
 
@@ -411,11 +413,11 @@ Field name:	loadflags
 
 如果 `CAN_USE_HEAP` 被置位，那么将 `heap_end_ptr` 放入 `dx` 寄存器，然后加上 `STACK_SIZE` （最小堆栈大小是 512 bytes）。在加法完成之后，如果结果没有溢出（CF flag 没有置位，如果置位那么程序就出错了），那么就跳转到标号为 `2` 的代码处继续执行（这段代码的逻辑在1中已经详细介绍了），接着我们就得到了如下图所示的堆栈：
 
-![stack](http://oi62.tinypic.com/dr7b5w.jpg)
+![stack](https://github.com/0xAX/linux-insides/raw/master/Booting/images/stack2.png)
 
 * 最后一种情况就是 `CAN_USE_HEAP` 没有置位， 那么我们就将 `dx` 寄存器的值加上 `STACK_SIZE`，然后跳转到标号为 `2` 的代码处继续执行，接着我们就得到了如下图所示的堆栈：
 
-![minimal stack](http://oi60.tinypic.com/28w051y.jpg)
+![minimal stack](https://github.com/0xAX/linux-insides/raw/master/Booting/images/minimal_stack.png)
 
 BSS段设置
 --------------------------------------------------------------------------------
@@ -440,9 +442,9 @@ BSS 段用来存储那些没有被初始化的静态变量。对于这个段使�
 	rep; stosl
 ```
 
-在这段代码中，首先将 [__bss_start](http://lxr.free-electrons.com/source/arch/x86/boot/setup.ld?v=3.18#L47) 地址放入 `di` 寄存器，然后将 `_end + 3` （4字节对齐） 地址放入 `cx`，接着使用 `xor` 指令将 `ax` 寄存器清零，接着计算 BSS 段的大小 （ `cx` - `di` ），让后将大小放入 `cx` 寄存器。接下来将 `cx` 寄存器除4，最后使用 `rep; stosl` 指令将 `ax` 寄存器的值（0）写入 寄存器整个 BSS 段。 代码执行完成之后，我们将得到如下图所示的 BSS 段:
+在这段代码中，首先将 [__bss_start](http://lxr.free-electrons.com/source/arch/x86/boot/setup.ld?v=3.18#L47) 地址放入 `di` 寄存器，然后将 `_end + 3` （4字节对齐） 地址放入 `cx`，接着使用 `xor` 指令将 `ax` 寄存器清零，接着计算 BSS 段的大小 （ `cx` - `di` ），然后将大小放入 `cx` 寄存器。接下来将 `cx` 寄存器除4，最后使用 `rep; stosl` 指令将 `ax` 寄存器的值（0）写入 寄存器整个 BSS 段。 代码执行完成之后，我们将得到如下图所示的 BSS 段:
 
-![bss](http://oi59.tinypic.com/29m2eyr.jpg)
+![bss](https://github.com/0xAX/linux-insides/raw/master/Booting/images/bss.png)
 
 跳转到 main 函数
 --------------------------------------------------------------------------------

@@ -38,11 +38,11 @@ vga=<mode>
 	line is parsed.
 ```
 
-根据上面的描述，我们可以通过将 `vga` 选项写入 grub 或者起到引导程序的配置文件，从而让内核命令行得到相应的显示模式设置信息。这个选项可以接受不同类型的值来表示相同的意思。比如你可以传入 0XFFFD 或者 ask，这2个值都表示需要显示一个菜单让用户选择想要的显示模式。下面的链接就给出了这个菜单：
+根据上面的描述，我们可以通过将 `vga` 选项写入 grub 或者写到引导程序的配置文件，从而让内核命令行得到相应的显示模式设置信息。这个选项可以接受不同类型的值来表示相同的意思。比如你可以传入 0XFFFD 或者 ask，这2个值都表示需要显示一个菜单让用户选择想要的显示模式。下面的链接就给出了这个菜单：
 
 ![video mode setup menu](http://oi59.tinypic.com/ejcz81.jpg)
 
-通过这个菜单，用户可以选择想要进入的显示模式。不过再我们进一步了解显示模式的设置过程之前，让我们先回头了解一些重要的概念。
+通过这个菜单，用户可以选择想要进入的显示模式。不过在我们进一步了解显示模式的设置过程之前，让我们先回头了解一些重要的概念。
 
 内核数据类型
 --------------------------------------------------------------------------------
@@ -84,7 +84,7 @@ vga=<mode>
 
 * 某个数据类型所占用的字节数
 * `__alignof__(type)` 返回对于请求的数据类型需要怎样的对齐方式 ( 根据我的了解这个是 gcc 提供的一个功能 ）
-* `n` 需要分配对少个对应数据类型的对象
+* `n` 需要分配多少个对应数据类型的对象
 
 下面是 `__get_heap` 函数的实现：
 
@@ -124,7 +124,7 @@ static inline bool heap_free(size_t n)
 
 首先函数初始化一个类型为 `biosregs` 的变量，将其中的 `AH` 寄存器内容设置成 `0x3`，然后调用 `0x10` BIOS 中断。当中断调用返回之后，`DL` 和 `DH` 寄存器分别包含了当前光标的行和列信息。接着，这2个信息将被保存到 `boot_params.screen_info` 字段的 `orig_x` 和 `orig_y`字段。
 
-在 `store_cursor_position` 函数执行完毕之后，`store_mode_params` 函数将调用 `store_vide_mode` 函数将当前使用的显示模式保存到 `boot_params.screen_info.orig_video_mode`。
+在 `store_cursor_position` 函数执行完毕之后，`store_mode_params` 函数将调用 `store_video_mode` 函数将当前使用的显示模式保存到 `boot_params.screen_info.orig_video_mode`。
 
 接下來 `store_mode_params` 函数将根据当前显示模式的设定，给 `video_segment` 变量设置正确的值（实际上就是设置显示内存的起始地址）。在 BIOS 将控制权转移到引导扇区的时候，显示内存地址和显示模式的对应关系如下表所示：
 
@@ -288,7 +288,7 @@ static int vga_set_mode(struct mode_info *mode)
 在切换到保护模式之前的最后的准备工作
 --------------------------------------------------------------------------------
 
-在进入保护模式之前的最后一个函数调用发生在 [main.c](http://lxr.free-electrons.com/source/arch/x86/boot/main.c?v=3.18#L184) 中的 `go_to_protected_mode` 函数，就像这个函数的注释说的，这个函数将进行最后的准备工作然后进入保护模式，下面就让我们来具体看看最后的准备工作是什么，以及系统是如何切换如保护模式的。
+在进入保护模式之前的最后一个函数调用发生在 [main.c](http://lxr.free-electrons.com/source/arch/x86/boot/main.c?v=3.18#L184) 中的 `go_to_protected_mode` 函数，就像这个函数的注释说的，这个函数将进行最后的准备工作然后进入保护模式，下面就让我们来具体看看最后的准备工作是什么，以及系统是如何切换到保护模式的。
 
 `go_to_protected_mode` 函数本身定义在 [arch/x86/boot/pm.c](http://lxr.free-electrons.com/source/arch/x86/boot/pm.c?v=3.18#L104)。 这个函数调用了一些其他的函数进行最后的准备工作，下面就让我们来具体看看这些函数。
 
@@ -392,7 +392,7 @@ outb(0xff, 0xa1);       /* Mask all interrupts on the secondary PIC */
 outb(0xfb, 0x21);       /* Mask all but cascade on the primary PIC */
 ```
 
-这个函数调用激活主和从中断控制器 (Programmable Interrupt Controller)上的中断，唯一的例外是主中断控制器上的级联中断（所有从中断控制器的中断将通过这个级联中断报告给 CPU ）。
+这个函数调用屏蔽了从中断控制器 (注：中断控制器的原文是 Programmable Interrupt Controller) 的所有中断，和主中断控制器上除IRQ2以外的所有中断（IRQ2是主中断控制器上的级联中断，所有从中断控制器的中断将通过这个级联中断报告给 CPU ）。
 
 到这里位置，我们就完成了所有的准备工作，下面我们就将正式开始从实模式转换到保护模式。
 
@@ -409,7 +409,7 @@ static void setup_idt(void)
 }
 ```
 
-上面的代码使用 `lidtl` 指令将 `null_idt` 所指向的中断描述符表引入寄存器 IDT。由于 `null_idt` 没有设定中断描述符表的长度（长度为 0 ），所以这段指令执行之后，实际上没有任何中断调用被设置成功（所有中断调用都是空的），在后面的章节中我们将看到正确的设置。`null_idt` 是一个 `gdt_ptr` 机构的数据，这个结构的定义如下所示：
+上面的代码使用 `lidtl` 指令将 `null_idt` 所指向的中断描述符表引入寄存器 IDT。由于 `null_idt` 没有设定中断描述符表的长度（长度为 0 ），所以这段指令执行之后，实际上没有任何中断调用被设置成功（所有中断调用都是空的），在后面的章节中我们将看到正确的设置。`null_idt` 是一个 `gdt_ptr` 结构的数据，这个结构的定义如下所示：
 
 ```C
 struct gdt_ptr {
@@ -423,7 +423,7 @@ struct gdt_ptr {
 设置全局描述符表
 --------------------------------------------------------------------------------
 
-在设置完中断描述符表之后，我们将使用 `setup_gdt` 函数来设置全部描述符表（关于全局描述符表，大家可以参考[上一章](linux-bootstrap-2.md#protected-mode) 的内容）。在 `setup_gdt` 函数中，使用 `boot_gdt` 数组定义了需要引入 GDTR 寄存器的段描述符信息：
+在设置完中断描述符表之后，我们将使用 `setup_gdt` 函数来设置全局描述符表（关于全局描述符表，大家可以参考[上一章](linux-bootstrap-2.md#protected-mode) 的内容）。在 `setup_gdt` 函数中，使用 `boot_gdt` 数组定义了需要引入 GDTR 寄存器的段描述符信息：
 
 ```C
    //GDT_ENTRY_BOOT_CS 定义在http://lxr.free-electrons.com/source/arch/x86/include/asm/segment.h#L19 = 2
@@ -434,7 +434,7 @@ struct gdt_ptr {
 	};
 ```
 
-在上面的 `boot_gdt` 数组中，我们定义了代码，数据和 TSS 段的段描述符，因为我们并没有设置任何的中断调用（记得上面所的 `null_idt`吗？），所以 TSS 段并不会被使用到。TSS 段存在的唯一目的就是让 Intel 处理器能够正确进入保护模式。下面让我们详细了解一下 `boot_gdt` 这个数组，首先，这个数组被 `__attribute__((aligned(16)))` 修饰，这就意味着这个数组将以 16 字节为单位对齐。让我们通过下面的例子来了解一下什么叫 16 字节对齐：
+在上面的 `boot_gdt` 数组中，我们定义了代码，数据和 TSS 段(Task State Segment, 任务状态段)的段描述符，因为我们并没有设置任何的中断调用（记得上面说的 `null_idt`吗？），所以 TSS 段并不会被使用到。TSS 段存在的唯一目的就是让 Intel 处理器能够正确进入保护模式。下面让我们详细了解一下 `boot_gdt` 这个数组，首先，这个数组被 `__attribute__((aligned(16)))` 修饰，这就意味着这个数组将以 16 字节为单位对齐。让我们通过下面的例子来了解一下什么叫 16 字节对齐：
 
 ```C
 #include <stdio.h>
